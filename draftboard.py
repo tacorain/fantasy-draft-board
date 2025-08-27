@@ -17,8 +17,8 @@ if "tiers" not in st.session_state:
     st.session_state.tiers = {}
 if "drafted" not in st.session_state:
     st.session_state.drafted = set()
-
-players = None
+if "players" not in st.session_state:
+    st.session_state.players = None  # full list of all players
 
 # --- Helper to toggle drafted status ---
 def toggle_drafted(player_name):
@@ -30,39 +30,45 @@ def toggle_drafted(player_name):
 # --- Load imported board ---
 if imported_board:
     board_df = pd.read_csv(imported_board)
-    st.session_state.tiers = {}
+
+    # Save full list of players for left panel
+    st.session_state.players = board_df[["Name", "Position", "Team", "Rank"]].copy()
+
+    # Initialize tiers
+    st.session_state.tiers = {pos: {i: [] for i in range(1,6)} for pos in board_df["Position"].unique()}
     st.session_state.drafted = set()
 
+    # Populate tiers and drafted status
     for row in board_df.itertuples():
-        pos = row.Position
-        tier = int(row.Tier)
         name = row.Name
-        drafted = row.Drafted
+        pos = row.Position
         team = getattr(row, "Team", "")
+        tier = getattr(row, "Tier", None)
+        drafted = getattr(row, "Drafted", False)
 
-        if pos not in st.session_state.tiers:
-            st.session_state.tiers[pos] = {i: [] for i in range(1, 6)}
+        if pd.notna(tier):
+            tier = int(tier)
+            st.session_state.tiers[pos][tier].append((name, team))
 
-        st.session_state.tiers[pos][tier].append((name, team))
         if drafted:
             st.session_state.drafted.add(name)
 
-    players = board_df
-
 elif uploaded_file:
-    players = pd.read_csv(uploaded_file)
+    players_df = pd.read_csv(uploaded_file)
     required_cols = {"Name", "Position", "Team"}
-    if not required_cols.issubset(players.columns):
+    if not required_cols.issubset(players_df.columns):
         st.error(f"CSV must include at least these columns: {required_cols}")
         st.stop()
 
+    st.session_state.players = players_df
+
     if not st.session_state.tiers:
         st.session_state.tiers = {
-            pos: {i: [] for i in range(1, 6)} for pos in players["Position"].unique()
+            pos: {i: [] for i in range(1, 6)} for pos in players_df["Position"].unique()
         }
 
 # --- Main layout ---
-if players is not None:
+if st.session_state.players is not None:
     left, right = st.columns([1, 2])
 
     # --- Left: Overall Rankings ---
@@ -70,21 +76,19 @@ if players is not None:
         st.subheader("📋 Overall Rankings")
         search_query = st.text_input("Search players by name", "").strip().lower()
 
+        players_to_show = st.session_state.players
         if search_query:
-            filtered_players = players[players["Name"].str.lower().str.contains(search_query)]
-        else:
-            filtered_players = players
+            players_to_show = players_to_show[players_to_show["Name"].str.lower().str.contains(search_query)]
 
-        for row in filtered_players.itertuples():
+        for row in players_to_show.itertuples():
             player_name = row.Name
             pos = row.Position
             team = getattr(row, "Team", "")
             rank = getattr(row, "Rank", None)
 
             drafted = player_name in st.session_state.drafted
-            player_label = f"{rank}. {player_name} ({team}, {pos})" if rank else f"{player_name} ({team}, {pos})"
+            player_label = f"{rank}. {player_name} ({team}, {pos})" if pd.notna(rank) else f"{player_name} ({team}, {pos})"
 
-            # --- One-line row with columns ---
             cols = st.columns([3, 1, 1])  # name/team, tier selector, draft toggle
 
             with cols[0]:
@@ -121,7 +125,7 @@ if players is not None:
             for i, col in enumerate(pos_cols, start=1):
                 with col:
                     st.markdown(f"**Tier {i}**")
-                    # Iterate over a copy to avoid mutation issues
+                    # iterate over a copy
                     for name, team in st.session_state.tiers[pos][i][:]:
                         display_text = f"{name} ({team})"
                         if name in st.session_state.drafted:
@@ -135,16 +139,26 @@ if players is not None:
 
     # --- Export ---
     export_data = []
-    for pos in st.session_state.tiers:
-        for tier, players_in_tier in st.session_state.tiers[pos].items():
-            for name, team in players_in_tier:
-                export_data.append({
-                    "Name": name,
-                    "Position": pos,
-                    "Team": team,
-                    "Tier": tier,
-                    "Drafted": name in st.session_state.drafted
-                })
+    for idx, row in st.session_state.players.iterrows():
+        name = row.Name
+        pos = row.Position
+        team = row.Team
+        rank = row.Rank if "Rank" in row else None
+        # find tier if assigned
+        tier_assigned = None
+        for t in st.session_state.tiers.get(pos, {}):
+            if any(pt[0] == name for pt in st.session_state.tiers[pos][t]):
+                tier_assigned = t
+                break
+
+        export_data.append({
+            "Name": name,
+            "Position": pos,
+            "Team": team,
+            "Rank": rank,
+            "Tier": tier_assigned,
+            "Drafted": name in st.session_state.drafted
+        })
 
     export_df = pd.DataFrame(export_data)
     buffer = io.StringIO()
