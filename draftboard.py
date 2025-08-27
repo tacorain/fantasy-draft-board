@@ -63,7 +63,7 @@ if st.button("Process Ringer Rankings"):
         # Save to CSV in memory
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Rank", "Player", "Team", "Pos", "Bye", "Value", "Tier"])
+        writer.writerow(["Rank", "Name", "Team", "Pos", "Bye", "Value", "Tier"])
         writer.writerows(cleaned_rows)
 
         st.success(f"Processed {len(cleaned_rows)} players from Ringer rankings!")
