@@ -31,7 +31,7 @@ def toggle_drafted(name):
 if imported_board:
     board_df = pd.read_csv(imported_board)
 
-    # Full rankings for left panel
+    # Full rankings
     st.session_state.players = board_df[["Name", "Position", "Team", "Rank"]].copy()
 
     # Initialize tiers
@@ -113,9 +113,11 @@ if st.session_state.players is not None:
                         ]
                     st.session_state.tiers[pos][tier_choice].append({"name": player_name, "team": team})
 
-            # Draft button
+            # Draft button (use deterministic key even if tier not assigned)
+            tier_for_key = 0
+            key = f"draft_{pos}_{tier_for_key}_{player_name}"
             with cols[2]:
-                if st.button("Draft", key=f"draft_{player_name}"):
+                if st.button("Draft", key=key):
                     toggle_drafted(player_name)
 
     # --- Right: Tier Boards ---
@@ -132,7 +134,7 @@ if st.session_state.players is not None:
                         name = player["name"]
                         team = player["team"]
                         display_text = f"{name} ({team})"
-                        key = f"tierdraft_{pos}_{i}_{name}"
+                        key = f"tierdraft_{pos}_{i}_{name}"  # deterministic key
                         if name in st.session_state.drafted:
                             st.markdown(f"~~{display_text}~~")
                         else:
