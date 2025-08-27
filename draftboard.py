@@ -29,21 +29,23 @@ if imported_board:
 
     for row in board_df.itertuples():
         pos = row.Position
-        tier = row.Tier
+        tier = int(row.Tier)
         name = row.Name
         drafted = row.Drafted
+        team = getattr(row, "Team", "")
 
         if pos not in st.session_state.tiers:
             st.session_state.tiers[pos] = {i: [] for i in range(1, 6)}
 
-        st.session_state.tiers[pos][tier].append(name)
+        st.session_state.tiers[pos][tier].append((name, team))
         if drafted:
             st.session_state.drafted.add(name)
 
     players = board_df  # reuse imported board as rankings list
+
 elif uploaded_file:
     players = pd.read_csv(uploaded_file)
-    required_cols = {"Name", "Position"}
+    required_cols = {"Name", "Position", "Team"}
     if not required_cols.issubset(players.columns):
         st.error(f"CSV must include at least these columns: {required_cols}")
         st.stop()
@@ -53,11 +55,11 @@ elif uploaded_file:
             pos: {i: [] for i in range(1, 6)} for pos in players["Position"].unique()
         }
 
+# --- Main layout ---
 if players is not None:
-    # --- Main layout: 2 panels ---
     left, right = st.columns([1, 2])
 
-    # --- Left side: Overall Rankings ---
+    # --- Left: Overall Rankings ---
     with left:
         st.subheader("📋 Overall Rankings")
         search_query = st.text_input("Search players by name", "").strip().lower()
@@ -70,18 +72,20 @@ if players is not None:
         for row in filtered_players.itertuples():
             player_name = row.Name
             pos = row.Position
+            team = getattr(row, "Team", "")
             rank = getattr(row, "Rank", None)
 
             drafted = player_name in st.session_state.drafted
-            player_label = f"{rank}. {player_name} ({pos})" if rank else f"{player_name} ({pos})"
+            player_label = f"{rank}. {player_name} ({team}, {pos})" if rank else f"{player_name} ({team}, {pos})"
 
-            cols = st.columns([3, 1, 1])  # name, tier, draft
+            cols = st.columns([3, 1])  # name, tier
             with cols[0]:
                 if drafted:
                     st.markdown(f"~~{player_label}~~")
                 else:
                     st.write(player_label)
 
+            # Assign to tier (position-aware)
             with cols[1]:
                 tier_choice = st.selectbox(
                     "Tier", [None, 1, 2, 3, 4, 5],
@@ -89,20 +93,22 @@ if players is not None:
                     label_visibility="collapsed"
                 )
                 if tier_choice:
+                    # Remove from other tiers in this position
                     for t in st.session_state.tiers.get(pos, {}):
-                        if player_name in st.session_state.tiers[pos][t]:
-                            st.session_state.tiers[pos][t].remove(player_name)
-                    if player_name not in st.session_state.tiers[pos][tier_choice]:
-                        st.session_state.tiers[pos][tier_choice].append(player_name)
+                        st.session_state.tiers[pos][t] = [
+                            pt for pt in st.session_state.tiers[pos][t] if pt[0] != player_name
+                        ]
+                    # Add to selected tier
+                    st.session_state.tiers[pos][tier_choice].append((player_name, team))
 
-            with cols[2]:
-                if st.button("Draft", key=f"draft_{player_name}"):
-                    if drafted:
-                        st.session_state.drafted.remove(player_name)
-                    else:
-                        st.session_state.drafted.add(player_name)
+            # Toggle drafted status by clicking on the player
+            if st.button("Draft", key=f"draft_{player_name}"):
+                if drafted:
+                    st.session_state.drafted.remove(player_name)
+                else:
+                    st.session_state.drafted.add(player_name)
 
-    # --- Right side: Position Tier Boards ---
+    # --- Right: Tier Boards ---
     with right:
         st.subheader("🎯 Tier Board by Position")
 
@@ -112,41 +118,30 @@ if players is not None:
             for i, col in enumerate(pos_cols, start=1):
                 with col:
                     st.markdown(f"**Tier {i}**")
-                    for p in st.session_state.tiers[pos][i]:
-                        if p in st.session_state.drafted:
-                            st.markdown(f"~~{p}~~")
+                    for name, team in st.session_state.tiers[pos][i]:
+                        display_text = f"{name} ({team})"
+                        if name in st.session_state.drafted:
+                            st.markdown(f"~~{display_text}~~")
                         else:
-                            if st.button(f"Draft {p}", key=f"tierdraft_{pos}_{i}_{p}"):
-                                st.session_state.drafted.add(p)
+                            st.write(display_text)
 
-        st.divider()
+    st.divider()
     st.subheader("📤 Export Tiered Board")
 
-    # --- Export current board ---
+    # --- Export ---
     export_data = []
-    for row in players.itertuples():
-        player_name = row.Name
-        pos = row.Position
-        rank = getattr(row, "Rank", None)
-
-        # find player's tier (if any)
-        tier = None
-        if pos in st.session_state.tiers:
-            for t, players_in_tier in st.session_state.tiers[pos].items():
-                if player_name in players_in_tier:
-                    tier = t
-                    break
-
-        export_data.append({
-            "Rank": rank,
-            "Name": player_name,
-            "Position": pos,
-            "Tier": tier,
-            "Drafted": player_name in st.session_state.drafted
-        })
+    for pos in st.session_state.tiers:
+        for tier, players_in_tier in st.session_state.tiers[pos].items():
+            for name, team in players_in_tier:
+                export_data.append({
+                    "Name": name,
+                    "Position": pos,
+                    "Team": team,
+                    "Tier": tier,
+                    "Drafted": name in st.session_state.drafted
+                })
 
     export_df = pd.DataFrame(export_data)
-
     buffer = io.StringIO()
     export_df.to_csv(buffer, index=False)
     st.download_button(
@@ -155,7 +150,6 @@ if players is not None:
         file_name="tiered_draft_board.csv",
         mime="text/csv"
     )
-
 
 else:
     st.info("👆 Upload either an initial rankings CSV or a saved draft board CSV to get started.")
