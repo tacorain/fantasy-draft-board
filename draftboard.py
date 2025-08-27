@@ -20,6 +20,14 @@ if "drafted" not in st.session_state:
 
 players = None
 
+# --- Helper to toggle drafted status and immediately refresh ---
+def toggle_drafted(player_name):
+    if player_name in st.session_state.drafted:
+        st.session_state.drafted.remove(player_name)
+    else:
+        st.session_state.drafted.add(player_name)
+    st.experimental_rerun()
+
 # --- Load imported board ---
 if imported_board:
     board_df = pd.read_csv(imported_board)
@@ -103,10 +111,7 @@ if players is not None:
             with cols[2]:
                 draft_label = "✓" if drafted else "⨯"
                 if st.button(draft_label, key=f"draft_{player_name}"):
-                    if drafted:
-                        st.session_state.drafted.remove(player_name)
-                    else:
-                        st.session_state.drafted.add(player_name)
+                    toggle_drafted(player_name)
 
     # --- Right: Tier Boards ---
     with right:
@@ -119,12 +124,11 @@ if players is not None:
                     st.markdown(f"**Tier {i}**")
                     for name, team in st.session_state.tiers[pos][i]:
                         display_text = f"{name} ({team})"
-                        # Clickable player to toggle drafted
                         if name in st.session_state.drafted:
                             st.markdown(f"~~{display_text}~~")
                         else:
                             if st.button(display_text, key=f"tierdraft_{pos}_{i}_{name}"):
-                                st.session_state.drafted.add(name) if name not in st.session_state.drafted else st.session_state.drafted.remove(name)
+                                toggle_drafted(name)
 
     st.divider()
     st.subheader("📤 Export Tiered Board")
