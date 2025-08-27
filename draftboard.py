@@ -7,11 +7,38 @@ st.set_page_config(page_title="Fantasy Draft Board", layout="wide")
 st.title("🏈 Fantasy Football Draft Board")
 
 # --- File uploaders ---
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_file = st.file_uploader("Upload your initial player rankings CSV", type=["csv"])
-with col2:
-    imported_board = st.file_uploader("Or upload a previously exported draft board CSV", type=["csv"])
+cols = st.columns([3, 1, 1])  # name/team, tier, draft
+
+with cols[0]:
+    # Display player name + team
+    if drafted:
+        st.markdown(f"~~{player_label}~~")
+    else:
+        st.markdown(player_label)
+
+with cols[1]:
+    # Tier selector
+    tier_choice = st.selectbox(
+        "", [None, 1, 2, 3, 4, 5],
+        key=f"tier_{player_name}",
+        label_visibility="collapsed"
+    )
+    if tier_choice:
+        # Remove from other tiers in this position
+        for t in st.session_state.tiers.get(pos, {}):
+            st.session_state.tiers[pos][t] = [
+                pt for pt in st.session_state.tiers[pos][t] if pt[0] != player_name
+            ]
+        st.session_state.tiers[pos][tier_choice].append((player_name, team))
+
+with cols[2]:
+    # Draft button
+    draft_label = "✓" if drafted else "⨯"
+    if st.button(draft_label, key=f"draft_{player_name}"):
+        if drafted:
+            st.session_state.drafted.remove(player_name)
+        else:
+            st.session_state.drafted.add(player_name)
 
 # --- Initialize session state ---
 if "tiers" not in st.session_state:
