@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import io
 import math
-import requests
-from bs4 import BeautifulSoup
+import re
+import csv
 
 st.set_page_config(page_title="Fantasy Draft Board", layout="wide")
 st.title("🏈 Fantasy Football Draft Board")
@@ -23,35 +23,6 @@ def rebuild_tiers():
         if t:
             st.session_state.tiers[data["pos"]][t].append({"name": name, "team": data["team"]})
 
-# --- Fetch Ringer PPR rankings and prepare CSV ---
-def fetch_ringer_rankings_csv():
-    url = "https://theringer.com/fantasy-football/2025?draft=ppr"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, "html.parser")
-    players = []
-
-    for row in soup.find_all("div", class_="ranking-row"):
-        rank_el = row.find("span", class_="ranking-number")
-        name_el = row.find("span", class_="ranking-player-name")
-        team_pos_el = row.find("span", class_="ranking-team-position")
-
-        if rank_el and name_el and team_pos_el:
-            try:
-                rank = int(rank_el.text.strip().replace(".", ""))
-            except:
-                rank = None
-            name = name_el.text.strip()
-            team_pos = team_pos_el.text.strip().split(", ")
-            if len(team_pos) == 2:
-                team, pos = team_pos
-            else:
-                team, pos = team_pos[0], "Unknown"
-            players.append([rank, name, team, pos])
-
-    df = pd.DataFrame(players, columns=["Rank", "Name", "Team", "Position"])
-    df["Tier"] = None
-    df["Drafted"] = False
-    return df
 
 # --- Upload and fetch interface ---
 col1, col2, col3 = st.columns([2,2,2])
@@ -73,6 +44,47 @@ with col3:
         )
         st.success("CSV generated! You can upload it to your draft board.")
 
+# --- Add this section somewhere near your file import/export UI ---
+
+st.header("Import Ringer Rankings")
+
+ringer_text = st.text_area("Paste raw Ringer rankings text here:", height=300)
+
+if st.button("Process Ringer Rankings"):
+    cleaned_rows = []
+    for line in ringer_text.splitlines():
+        line = line.strip()
+        # Skip headers, section dividers, and empty lines
+        if not line or line.startswith(("Rk", "RUNNING", "WIDE", "TIGHT", "DEFENSES", "KICKERS")):
+            continue
+
+        # Pattern: Rank, Player, Team, Pos, Bye, $Value, Tier
+        pattern = r"^(\d+)\s+([\w\.'-]+(?:\s[\w\.'-]+)*)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)?\s*(\d+)\s+\$(\d+)(?:\s+([A-F]))?"
+        m = re.match(pattern, line)
+        if m:
+            rank, player, team, pos, bye, val, tier = m.groups()
+            cleaned_rows.append([
+                rank, player, team, pos or "", bye, val, tier or ""
+            ])
+
+    if cleaned_rows:
+        # Save to CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Rank", "Player", "Team", "Pos", "Bye", "Value", "Tier"])
+        writer.writerows(cleaned_rows)
+
+        st.success(f"Processed {len(cleaned_rows)} players from Ringer rankings!")
+
+        st.download_button(
+            label="Download Cleaned CSV",
+            data=output.getvalue(),
+            file_name="ringer_rankings.csv",
+            mime="text/csv",
+        )
+    else:
+        st.error("No players could be parsed. Double-check the text format.")
+        
 # --- Load CSV files into session state ---
 if imported_board:
     df = pd.read_csv(imported_board)
