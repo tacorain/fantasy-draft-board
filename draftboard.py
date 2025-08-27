@@ -20,15 +20,22 @@ if "drafted" not in st.session_state:
 if "players" not in st.session_state:
     st.session_state.players = None  # full list of all players
 
+# --- Helper to toggle drafted status ---
+def toggle_drafted(name):
+    if name in st.session_state.drafted:
+        st.session_state.drafted.remove(name)
+    else:
+        st.session_state.drafted.add(name)
+
 # --- Load imported board ---
 if imported_board:
     board_df = pd.read_csv(imported_board)
 
-    # Full rankings
+    # Full rankings for left panel
     st.session_state.players = board_df[["Name", "Position", "Team", "Rank"]].copy()
 
     # Initialize tiers
-    st.session_state.tiers = {pos: {i: [] for i in range(1,6)} for pos in board_df["Position"].unique()}
+    st.session_state.tiers = {pos: {i: [] for i in range(1, 6)} for pos in board_df["Position"].unique()}
     st.session_state.drafted = set()
 
     # Populate tiers and drafted status
@@ -106,13 +113,10 @@ if st.session_state.players is not None:
                         ]
                     st.session_state.tiers[pos][tier_choice].append({"name": player_name, "team": team})
 
-            # Draft checkbox
+            # Draft button
             with cols[2]:
-                checked = player_name in st.session_state.drafted
-                if st.checkbox("", value=checked, key=f"drafted_{player_name}"):
-                    st.session_state.drafted.add(player_name)
-                else:
-                    st.session_state.drafted.discard(player_name)
+                if st.button("Draft", key=f"draft_{player_name}"):
+                    toggle_drafted(player_name)
 
     # --- Right: Tier Boards ---
     with right:
@@ -123,17 +127,17 @@ if st.session_state.players is not None:
             for i, col in enumerate(pos_cols, start=1):
                 with col:
                     st.markdown(f"**Tier {i}**")
-                    # iterate over copy
+                    # Iterate over a copy
                     for player in st.session_state.tiers[pos][i][:]:
                         name = player["name"]
                         team = player["team"]
                         display_text = f"{name} ({team})"
                         key = f"tierdraft_{pos}_{i}_{name}"
-                        checked = name in st.session_state.drafted
-                        if st.checkbox(display_text, value=checked, key=key):
-                            st.session_state.drafted.add(name)
+                        if name in st.session_state.drafted:
+                            st.markdown(f"~~{display_text}~~")
                         else:
-                            st.session_state.drafted.discard(name)
+                            if st.button(display_text, key=key):
+                                toggle_drafted(name)
 
     st.divider()
     st.subheader("📤 Export Tiered Board")
