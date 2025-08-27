@@ -106,7 +106,7 @@ if st.session_state.players_dict:
                     [0,1,2,3,4,5],
                     index=index,
                     key=f"tier_{name}",
-                    format_func=lambda x: f"Tier {x}" if x>0 else "None",
+                    format_func=lambda x: f"{x}" if x>0 else "None",
                     label_visibility="collapsed"
                 )
                 if tier_choice != data["tier"]:
