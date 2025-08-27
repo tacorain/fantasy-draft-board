@@ -108,9 +108,9 @@ if players is not None:
                     st.session_state.tiers[pos][tier_choice].append((player_name, team))
 
             with cols[2]:
-                draft_label = "✓" if drafted else "⨯"
-                if st.button(draft_label, key=f"draft_{player_name}"):
-                    toggle_drafted(player_name)
+                if not drafted:
+                    if st.button("✓", key=f"draft_{player_name}"):
+                        toggle_drafted(player_name)
 
     # --- Right: Tier Boards ---
     with right:
@@ -121,7 +121,8 @@ if players is not None:
             for i, col in enumerate(pos_cols, start=1):
                 with col:
                     st.markdown(f"**Tier {i}**")
-                    for name, team in st.session_state.tiers[pos][i]:
+                    # Iterate over a copy to avoid mutation issues
+                    for name, team in st.session_state.tiers[pos][i][:]:
                         display_text = f"{name} ({team})"
                         if name in st.session_state.drafted:
                             st.markdown(f"~~{display_text}~~")
