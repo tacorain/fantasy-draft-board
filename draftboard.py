@@ -20,18 +20,11 @@ if "drafted" not in st.session_state:
 if "players" not in st.session_state:
     st.session_state.players = None  # full list of all players
 
-# --- Helper to toggle drafted status ---
-def toggle_drafted(player_name):
-    if player_name in st.session_state.drafted:
-        st.session_state.drafted.remove(player_name)
-    else:
-        st.session_state.drafted.add(player_name)
-
 # --- Load imported board ---
 if imported_board:
     board_df = pd.read_csv(imported_board)
 
-    # Save full list of players for left panel
+    # Full rankings
     st.session_state.players = board_df[["Name", "Position", "Team", "Rank"]].copy()
 
     # Initialize tiers
@@ -48,7 +41,7 @@ if imported_board:
 
         if pd.notna(tier):
             tier = int(tier)
-            st.session_state.tiers[pos][tier].append((name, team))
+            st.session_state.tiers[pos][tier].append({"name": name, "team": team})
 
         if drafted:
             st.session_state.drafted.add(name)
@@ -89,14 +82,16 @@ if st.session_state.players is not None:
             drafted = player_name in st.session_state.drafted
             player_label = f"{rank}. {player_name} ({team}, {pos})" if pd.notna(rank) else f"{player_name} ({team}, {pos})"
 
-            cols = st.columns([3, 1, 1])  # name/team, tier selector, draft toggle
+            cols = st.columns([3, 1, 1])
 
+            # Player label
             with cols[0]:
                 if drafted:
                     st.markdown(f"~~{player_label}~~")
                 else:
                     st.markdown(player_label)
 
+            # Tier assignment
             with cols[1]:
                 tier_choice = st.selectbox(
                     "", [None, 1, 2, 3, 4, 5],
@@ -104,17 +99,20 @@ if st.session_state.players is not None:
                     label_visibility="collapsed"
                 )
                 if tier_choice:
-                    # Remove from other tiers in this position
+                    # Remove from other tiers
                     for t in st.session_state.tiers.get(pos, {}):
                         st.session_state.tiers[pos][t] = [
-                            pt for pt in st.session_state.tiers[pos][t] if pt[0] != player_name
+                            pt for pt in st.session_state.tiers[pos][t] if pt["name"] != player_name
                         ]
-                    st.session_state.tiers[pos][tier_choice].append((player_name, team))
+                    st.session_state.tiers[pos][tier_choice].append({"name": player_name, "team": team})
 
+            # Draft checkbox
             with cols[2]:
-                if not drafted:
-                    if st.button("✓", key=f"draft_{player_name}"):
-                        toggle_drafted(player_name)
+                checked = player_name in st.session_state.drafted
+                if st.checkbox("", value=checked, key=f"drafted_{player_name}"):
+                    st.session_state.drafted.add(player_name)
+                else:
+                    st.session_state.drafted.discard(player_name)
 
     # --- Right: Tier Boards ---
     with right:
@@ -125,14 +123,17 @@ if st.session_state.players is not None:
             for i, col in enumerate(pos_cols, start=1):
                 with col:
                     st.markdown(f"**Tier {i}**")
-                    # iterate over a copy
-                    for name, team in st.session_state.tiers[pos][i][:]:
+                    # iterate over copy
+                    for player in st.session_state.tiers[pos][i][:]:
+                        name = player["name"]
+                        team = player["team"]
                         display_text = f"{name} ({team})"
-                        if name in st.session_state.drafted:
-                            st.markdown(f"~~{display_text}~~")
+                        key = f"tierdraft_{pos}_{i}_{name}"
+                        checked = name in st.session_state.drafted
+                        if st.checkbox(display_text, value=checked, key=key):
+                            st.session_state.drafted.add(name)
                         else:
-                            if st.button(display_text, key=f"tierdraft_{pos}_{i}_{name}"):
-                                toggle_drafted(name)
+                            st.session_state.drafted.discard(name)
 
     st.divider()
     st.subheader("📤 Export Tiered Board")
@@ -147,7 +148,7 @@ if st.session_state.players is not None:
         # find tier if assigned
         tier_assigned = None
         for t in st.session_state.tiers.get(pos, {}):
-            if any(pt[0] == name for pt in st.session_state.tiers[pos][t]):
+            if any(pt["name"] == name for pt in st.session_state.tiers[pos][t]):
                 tier_assigned = t
                 break
 
