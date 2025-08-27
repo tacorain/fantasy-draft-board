@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 import json
-import requests
-from bs4 import BeautifulSoup
 
 st.set_page_config(layout="wide")
 
@@ -32,30 +30,6 @@ def import_state(data):
     df = pd.DataFrame(records)
     df["Pos"] = df["Pos"].apply(clean_position)
     st.session_state.rankings = df
-
-def fetch_ringer_rankings():
-    """Scrape Ringer page and dump CSV (may fail if site markup changes)."""
-    url = "https://www.theringer.com/fantasy-football/2025?draft=ppr"
-    r = requests.get(url)
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    rows = []
-    for item in soup.find_all("li"):
-        text = item.get_text(" ", strip=True)
-        m = re.match(r"(\d+)\.\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)", text)
-        if m:
-            rank, player, team, pos = m.groups()
-            pos = clean_position(pos)
-            rows.append([rank, player.strip(), team, pos])
-
-    if rows:
-        df = pd.DataFrame(rows, columns=["Rank", "Player", "Team", "Pos"])
-        df["Drafted"] = False
-        df["Tier"] = None
-        df.to_csv("ringer_rankings.csv", index=False)
-        return df
-    else:
-        return pd.DataFrame(columns=["Rank", "Player", "Team", "Pos", "Drafted", "Tier"])
 
 # ------------------
 # Initial Data
@@ -87,13 +61,6 @@ with st.sidebar:
             import_state(data)
             st.success("JSON loaded")
 
-    if st.button("Fetch Ringer Rankings"):
-        df = fetch_ringer_rankings()
-        if not df.empty:
-            st.success("Ringer rankings saved as ringer_rankings.csv (upload to use)")
-        else:
-            st.warning("No names found – site markup may have changed")
-
     # 🔥 Text paste parser
     st.markdown("### Paste Rankings Text")
     pasted = st.text_area("Paste the raw dump from Ringer/PDF here:")
@@ -111,8 +78,8 @@ with st.sidebar:
             df = pd.DataFrame(rows, columns=["Rank", "Player", "Team", "Pos"])
             df["Drafted"] = False
             df["Tier"] = None
-            df.to_csv("ringer_rankings.csv", index=False)
-            st.success("Parsed and saved as ringer_rankings.csv. Upload it above to use.")
+            st.session_state.rankings = df
+            st.success("Rankings parsed and loaded into draft board")
         else:
             st.warning("No valid rows found in pasted text.")
 
@@ -126,7 +93,7 @@ with st.sidebar:
 st.title("Fantasy Draft Board")
 
 if st.session_state.rankings.empty:
-    st.info("Upload or parse rankings to begin.")
+    st.info("Upload or paste rankings to begin.")
 else:
     df = st.session_state.rankings
 
