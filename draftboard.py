@@ -119,20 +119,32 @@ if players is not None:
                             if st.button(f"Draft {p}", key=f"tierdraft_{pos}_{i}_{p}"):
                                 st.session_state.drafted.add(p)
 
-    st.divider()
+        st.divider()
     st.subheader("📤 Export Tiered Board")
 
     # --- Export current board ---
     export_data = []
-    for pos in st.session_state.tiers:
-        for tier, players_in_tier in st.session_state.tiers[pos].items():
-            for p in players_in_tier:
-                export_data.append({
-                    "Name": p,
-                    "Position": pos,
-                    "Tier": tier,
-                    "Drafted": p in st.session_state.drafted
-                })
+    for row in players.itertuples():
+        player_name = row.Name
+        pos = row.Position
+        rank = getattr(row, "Rank", None)
+
+        # find player's tier (if any)
+        tier = None
+        if pos in st.session_state.tiers:
+            for t, players_in_tier in st.session_state.tiers[pos].items():
+                if player_name in players_in_tier:
+                    tier = t
+                    break
+
+        export_data.append({
+            "Rank": rank,
+            "Name": player_name,
+            "Position": pos,
+            "Tier": tier,
+            "Drafted": player_name in st.session_state.drafted
+        })
+
     export_df = pd.DataFrame(export_data)
 
     buffer = io.StringIO()
@@ -143,6 +155,7 @@ if players is not None:
         file_name="tiered_draft_board.csv",
         mime="text/csv"
     )
+
 
 else:
     st.info("👆 Upload either an initial rankings CSV or a saved draft board CSV to get started.")
