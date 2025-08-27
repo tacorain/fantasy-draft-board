@@ -69,7 +69,7 @@ with st.sidebar:
         rows = []
         for line in lines:
             # Example: "15. CeeDee Lamb DAL WR2"
-            m = re.match(r"(\d+)\.\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)", line)
+            m = re.match(r"(\d+)\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)", line)
             if m:
                 rank, player, team, pos = m.groups()
                 pos = clean_position(pos)
