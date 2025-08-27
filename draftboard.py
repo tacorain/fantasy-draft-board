@@ -20,13 +20,12 @@ if "drafted" not in st.session_state:
 
 players = None
 
-# --- Helper to toggle drafted status and immediately refresh ---
+# --- Helper to toggle drafted status ---
 def toggle_drafted(player_name):
     if player_name in st.session_state.drafted:
         st.session_state.drafted.remove(player_name)
     else:
         st.session_state.drafted.add(player_name)
-    st.experimental_rerun()
 
 # --- Load imported board ---
 if imported_board:
