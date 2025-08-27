@@ -3,139 +3,160 @@ import pandas as pd
 import re
 import json
 import requests
+from bs4 import BeautifulSoup
 
-# -----------------------------
+st.set_page_config(layout="wide")
+
+# ------------------
 # Helpers
-# -----------------------------
-def clean_position(pos: str) -> str:
-    """Remove depth chart numbers (WR2 -> WR)."""
-    return re.sub(r"\d+$", "", pos) if pos else pos
+# ------------------
 
-def toggle_drafted(name):
-    st.session_state.drafted[name] = not st.session_state.drafted.get(name, False)
+def clean_position(pos):
+    """Remove numbers from positions like WR2 -> WR"""
+    return re.sub(r"\d+", "", pos)
+
+def toggle_drafted(player_name):
+    for p in st.session_state.rankings["Player"]:
+        if p == player_name:
+            idx = st.session_state.rankings.index[
+                st.session_state.rankings["Player"] == player_name
+            ][0]
+            st.session_state.rankings.at[idx, "Drafted"] = not st.session_state.rankings.at[idx, "Drafted"]
+            break
 
 def export_state():
-    export = {
-        "rankings": st.session_state.rankings.to_dict(),
-        "tiers": st.session_state.tiers,
-        "drafted": st.session_state.drafted,
-    }
-    return json.dumps(export)
+    return json.dumps(st.session_state.rankings.to_dict(orient="records"))
 
 def import_state(data):
-    parsed = json.loads(data)
-    st.session_state.rankings = pd.DataFrame(parsed["rankings"])
-    st.session_state.tiers = parsed["tiers"]
-    st.session_state.drafted = parsed["drafted"]
+    records = json.loads(data)
+    df = pd.DataFrame(records)
+    df["Pos"] = df["Pos"].apply(clean_position)
+    st.session_state.rankings = df
 
 def fetch_ringer_rankings():
+    """Scrape Ringer page and dump CSV (may fail if site markup changes)."""
     url = "https://www.theringer.com/fantasy-football/2025?draft=ppr"
-    resp = requests.get(url)
-    text = resp.text
-
-    # Regex to grab rows of rankings (approximation — may need adjusting if site changes)
-    pattern = re.compile(
-        r"(\d+)\.\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})?\s+([A-Z]{1,3}\d*)?\s*Bye\s*(\d+)?",
-        re.MULTILINE
-    )
+    r = requests.get(url)
+    soup = BeautifulSoup(r.text, "html.parser")
 
     rows = []
-    for m in pattern.finditer(text):
-        rank, player, team, pos, bye = m.groups()
-        pos = clean_position(pos)
-        rows.append([rank, player.strip(), team or "", pos or "", bye or ""])
+    for item in soup.find_all("li"):
+        text = item.get_text(" ", strip=True)
+        m = re.match(r"(\d+)\.\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)", text)
+        if m:
+            rank, player, team, pos = m.groups()
+            pos = clean_position(pos)
+            rows.append([rank, player.strip(), team, pos])
 
-    df = pd.DataFrame(rows, columns=["Rank", "Player", "Team", "Pos", "Bye"])
+    if rows:
+        df = pd.DataFrame(rows, columns=["Rank", "Player", "Team", "Pos"])
+        df["Drafted"] = False
+        df["Tier"] = None
+        df.to_csv("ringer_rankings.csv", index=False)
+        return df
+    else:
+        return pd.DataFrame(columns=["Rank", "Player", "Team", "Pos", "Drafted", "Tier"])
 
-    # Save CSV locally
-    df.to_csv("ringer_rankings.csv", index=False)
-    return df
-
-# -----------------------------
-# Streamlit App
-# -----------------------------
-st.title("Fantasy Draft Board")
+# ------------------
+# Initial Data
+# ------------------
 
 if "rankings" not in st.session_state:
-    st.session_state.rankings = pd.DataFrame()
-if "tiers" not in st.session_state:
-    st.session_state.tiers = {pos: {i: [] for i in range(1, 6)} for pos in ["QB", "RB", "WR", "TE"]}
-if "drafted" not in st.session_state:
-    st.session_state.drafted = {}
+    st.session_state.rankings = pd.DataFrame(columns=["Rank", "Player", "Team", "Pos", "Drafted", "Tier"])
 
-# Sidebar actions
+# ------------------
+# Sidebar
+# ------------------
+
 with st.sidebar:
     st.subheader("Data")
+
     uploaded = st.file_uploader("Upload rankings CSV or export JSON", type=["csv", "json"])
     if uploaded:
         if uploaded.name.endswith(".csv"):
             df = pd.read_csv(uploaded)
+            if "Drafted" not in df.columns:
+                df["Drafted"] = False
+            if "Tier" not in df.columns:
+                df["Tier"] = None
             df["Pos"] = df["Pos"].apply(clean_position)
             st.session_state.rankings = df
-        else:  # json
+            st.success("CSV loaded")
+        else:
             data = uploaded.read().decode("utf-8")
             import_state(data)
+            st.success("JSON loaded")
 
     if st.button("Fetch Ringer Rankings"):
         df = fetch_ringer_rankings()
-        st.success("Ringer rankings saved as ringer_rankings.csv")
+        if not df.empty:
+            st.success("Ringer rankings saved as ringer_rankings.csv (upload to use)")
+        else:
+            st.warning("No names found – site markup may have changed")
+
+    # 🔥 Text paste parser
+    st.markdown("### Paste Rankings Text")
+    pasted = st.text_area("Paste the raw dump from Ringer/PDF here:")
+    if st.button("Parse Pasted Rankings"):
+        lines = pasted.splitlines()
+        rows = []
+        for line in lines:
+            # Example: "15. CeeDee Lamb DAL WR2"
+            m = re.match(r"(\d+)\.\s+([A-Za-z\.\'\-\s]+)\s+([A-Z]{2,3})\s+([A-Z]{1,3}\d*)", line)
+            if m:
+                rank, player, team, pos = m.groups()
+                pos = clean_position(pos)
+                rows.append([rank, player.strip(), team, pos])
+        if rows:
+            df = pd.DataFrame(rows, columns=["Rank", "Player", "Team", "Pos"])
+            df["Drafted"] = False
+            df["Tier"] = None
+            df.to_csv("ringer_rankings.csv", index=False)
+            st.success("Parsed and saved as ringer_rankings.csv. Upload it above to use.")
+        else:
+            st.warning("No valid rows found in pasted text.")
 
     export_json = export_state()
     st.download_button("Export Board", export_json, file_name="draftboard_export.json")
 
-# Layout: Left = Rankings, Right = Tiers
-col1, col2 = st.columns([1, 2])
+# ------------------
+# Main UI
+# ------------------
 
-# -----------------------------
-# Left Column: Overall Rankings
-# -----------------------------
-with col1:
-    st.subheader("Overall Rankings")
+st.title("Fantasy Draft Board")
 
-    if not st.session_state.rankings.empty:
-        for i, row in st.session_state.rankings.iterrows():
-            name = row["Player"]
-            team = row.get("Team", "")
-            pos = row.get("Pos", "")
-            drafted = st.session_state.drafted.get(name, False)
+if st.session_state.rankings.empty:
+    st.info("Upload or parse rankings to begin.")
+else:
+    df = st.session_state.rankings
 
-            label = f"{name} ({team} - {pos})"
-            if drafted:
-                label = f"~~{label}~~"
+    # Global rankings list
+    st.header("Global Rankings")
+    for _, row in df.sort_values(by="Rank", key=lambda x: pd.to_numeric(x, errors="coerce")).iterrows():
+        cols = st.columns([4, 1, 1])
+        drafted = row.get("Drafted", False)
+        label = f"{row['Player']} ({row['Team']} {row['Pos']})"
+        if drafted:
+            label = f"~~{label}~~ ✅"
 
-            cols = st.columns([4, 1, 1])
-            with cols[0]:
-                st.markdown(label, unsafe_allow_html=True)
-            with cols[1]:
-                if st.button("✓", key=f"draft_{name}"):
-                    toggle_drafted(name)
-            with cols[2]:
-                tier_choice = st.selectbox(
-                    "",
-                    [1, 2, 3, 4, 5],
-                    index=0,
-                    key=f"tier_{name}",
-                    label_visibility="collapsed",
-                )
-                if st.button("→", key=f"add_{name}"):
-                    pos_clean = clean_position(pos)
-                    if pos_clean in st.session_state.tiers:
-                        st.session_state.tiers[pos_clean][tier_choice].append(name)
+        if cols[0].button(label, key=f"draft_{row['Player']}"):
+            toggle_drafted(row['Player'])
 
-# -----------------------------
-# Right Column: Tiers
-# -----------------------------
-with col2:
-    st.subheader("Position Tiers")
+        tier_choice = cols[1].selectbox(
+            "",
+            [None, 1, 2, 3, 4, 5],
+            index=[None, 1, 2, 3, 4, 5].index(row.get("Tier")) if row.get("Tier") in [1,2,3,4,5] else 0,
+            key=f"tier_{row['Player']}",
+            label_visibility="collapsed"
+        )
+        st.session_state.rankings.at[row.name, "Tier"] = tier_choice
 
-    for pos in st.session_state.tiers:
-        st.markdown(f"### {pos}")
-        tier_cols = st.columns(5)
-        for t in range(1, 6):
-            with tier_cols[t - 1]:
-                st.markdown(f"**Tier {t}**")
-                for player in st.session_state.tiers[pos][t]:
-                    drafted = st.session_state.drafted.get(player, False)
-                    display = f"~~{player}~~" if drafted else player
-                    if st.button(display, key=f"tierdraft_{pos}_{t}_{player}"):
-                        toggle_drafted(player)
+    # Tiered view
+    st.header("Tiered View")
+    for t in sorted(df["Tier"].dropna().unique()):
+        st.subheader(f"Tier {int(t)}")
+        tier_df = df[df["Tier"] == t]
+        st.write(", ".join(
+            f"~~{p}~~" if d else p
+            for p, d in zip(tier_df["Player"], tier_df["Drafted"])
+        ))
