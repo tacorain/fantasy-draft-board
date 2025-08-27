@@ -30,19 +30,6 @@ with col1:
     uploaded_file = st.file_uploader("Upload initial rankings CSV", type=["csv"])
 with col2:
     imported_board = st.file_uploader("Upload saved draft board CSV", type=["csv"])
-with col3:
-    if st.button("Fetch Ringer PPR Rankings CSV"):
-        df = fetch_ringer_rankings_csv()
-        buffer = io.StringIO()
-        df.to_csv(buffer, index=False)
-        buffer.seek(0)
-        st.download_button(
-            label="Download Rankings CSV",
-            data=buffer.getvalue(),
-            file_name="ringer_2025_fantasy_rankings.csv",
-            mime="text/csv"
-        )
-        st.success("CSV generated! You can upload it to your draft board.")
 
 # --- Add this section somewhere near your file import/export UI ---
 
@@ -63,10 +50,15 @@ if st.button("Process Ringer Rankings"):
         m = re.match(pattern, line)
         if m:
             rank, player, team, pos, bye, val, tier = m.groups()
+            
+            # Normalize position: remove depth chart numbers (WR2 -> WR)
+            if pos:
+                pos = re.sub(r"\d+$", "", pos)
+        
             cleaned_rows.append([
                 rank, player, team, pos or "", bye, val, tier or ""
             ])
-
+            
     if cleaned_rows:
         # Save to CSV in memory
         output = io.StringIO()
