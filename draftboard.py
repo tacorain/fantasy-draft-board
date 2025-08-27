@@ -101,7 +101,7 @@ if players is not None:
                     # Add to selected tier
                     st.session_state.tiers[pos][tier_choice].append((player_name, team))
 
-            # Toggle drafted status by clicking on the player
+            # Toggle drafted status by clicking button
             if st.button("Draft", key=f"draft_{player_name}"):
                 if drafted:
                     st.session_state.drafted.remove(player_name)
@@ -123,7 +123,9 @@ if players is not None:
                         if name in st.session_state.drafted:
                             st.markdown(f"~~{display_text}~~")
                         else:
-                            st.write(display_text)
+                            # Clickable text toggles drafted status
+                            if st.button(display_text, key=f"tierdraft_{pos}_{i}_{name}"):
+                                st.session_state.drafted.add(name) if name not in st.session_state.drafted else st.session_state.drafted.remove(name)
 
     st.divider()
     st.subheader("📤 Export Tiered Board")
