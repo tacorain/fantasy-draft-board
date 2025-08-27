@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
+import math
 
 st.set_page_config(page_title="Fantasy Draft Board", layout="wide")
 st.title("🏈 Fantasy Football Draft Board")
@@ -41,11 +42,25 @@ if df is not None:
     for row in df.itertuples():
         name = row.Name
         if name not in st.session_state.players_dict:
+            # Safe conversion of tier
+            tier_val = 0
+            if hasattr(row, "Tier"):
+                raw_tier = getattr(row, "Tier")
+                if raw_tier is not None and not (isinstance(raw_tier, float) and math.isnan(raw_tier)):
+                    try:
+                        tier_val = int(raw_tier)
+                    except:
+                        tier_val = 0
+
+            drafted_val = False
+            if hasattr(row, "Drafted"):
+                drafted_val = bool(getattr(row, "Drafted", False))
+
             st.session_state.players_dict[name] = {
                 "pos": row.Position,
                 "team": getattr(row, "Team", ""),
-                "tier": getattr(row, "Tier", 0) if hasattr(row, "Tier") and pd.notna(getattr(row, "Tier")) else 0,
-                "drafted": bool(getattr(row, "Drafted", False)) if hasattr(row, "Drafted") else False,
+                "tier": tier_val,
+                "drafted": drafted_val,
                 "rank": getattr(row, "Rank", None)
             }
     rebuild_tiers()
@@ -79,9 +94,17 @@ if st.session_state.players_dict:
                     st.markdown(player_label)
 
             with cols[1]:
+                # Safe index conversion for selectbox
+                tier_val = data["tier"]
+                if tier_val is None or (isinstance(tier_val, float) and math.isnan(tier_val)):
+                    index = 0
+                else:
+                    index = int(tier_val)
+
                 tier_choice = st.selectbox(
-                    "", [0,1,2,3,4,5],
-                    index=data["tier"] if data["tier"] else 0,
+                    "",
+                    [0,1,2,3,4,5],
+                    index=index,
                     key=f"tier_{name}",
                     format_func=lambda x: f"Tier {x}" if x>0 else "None",
                     label_visibility="collapsed"
